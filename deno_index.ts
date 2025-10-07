@@ -76,3 +76,47 @@ async function handler(req: Request): Promise<Response> {
 console.log("This address is used to help astrbot connect to the Gemini API faster");
 // Start the server on port 8000 (local) or Deno Deploy's assigned port
 serve(handler);
+
+// 在deno_index.ts中添加schema转换函数
+function transformGeminiSchema(tools: any[]): any[] {
+  return tools.map(tool => {
+    if (tool.function_declarations) {
+      tool.function_declarations = tool.function_declarations.map(decl => {
+        if (decl.parameters) {
+          decl.parameters = cleanSchema(decl.parameters);
+        }
+        return decl;
+      });
+    }
+    return tool;
+  });
+}
+
+function cleanSchema(schema: any): any {
+  // 移除或转换不兼容的字段
+  const cleaned = { ...schema };
+  
+  // 处理$ref引用
+  if (cleaned.$ref) {
+    // 简化为通用object或具体类型
+    return { type: "object" };
+  }
+  
+  // 移除exclusive bounds
+  delete cleaned.exclusiveMaximum;
+  delete cleaned.exclusiveMinimum;
+  
+  // 处理anyOf/oneOf
+  if (cleaned.anyOf || cleaned.oneOf) {
+    return { type: "object" }; // 简化处理
+  }
+  
+  // 递归处理嵌套属性
+  if (cleaned.properties) {
+    Object.keys(cleaned.properties).forEach(key => {
+      cleaned.properties[key] = cleanSchema(cleaned.properties[key]);
+    });
+  }
+  
+  return cleaned;
+}
