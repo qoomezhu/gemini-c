@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { normalizeSchema, normalizeTools } from "./schema/normalizer.ts";
 
 async function handler(req: Request): Promise<Response> {
   const incomingUrl = new URL(req.url);
@@ -8,7 +9,7 @@ async function handler(req: Request): Promise<Response> {
       {
         status: 200, // OK
         headers: { "Content-Type": "text/plain; charset=utf-8" },
-      }
+      },
     );
   }
 
@@ -37,16 +38,22 @@ async function handler(req: Request): Promise<Response> {
     //    - Pass through the original method, headers, and body
     const response = await fetch(targetUrlString, {
       headers: req.headers, // Forward original headers
-      method: req.method,   // Forward original method
-      body: req.body,       // Forward original body (supports streaming)
-      redirect: 'manual',   // Do not auto-follow redirects, let client handle 3xx responses
+      method: req.method, // Forward original method
+      body: req.body, // Forward original body (supports streaming)
+      redirect: "manual", // Do not auto-follow redirects, let client handle 3xx responses
     });
 
     // 5. Set up CORS headers for the response
     const responseHeaders = new Headers(response.headers);
     responseHeaders.set("Access-Control-Allow-Origin", "*"); // Allow any origin
-    responseHeaders.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"); // Allowed methods
-    responseHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization, *"); // Allowed headers
+    responseHeaders.set(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, DELETE, OPTIONS",
+    ); // Allowed methods
+    responseHeaders.set(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, *",
+    ); // Allowed headers
 
     // 6. Handle OPTIONS preflight requests for CORS
     if (req.method === "OPTIONS") {
@@ -62,61 +69,73 @@ async function handler(req: Request): Promise<Response> {
       statusText: response.statusText,
       headers: responseHeaders,
     });
-
   } catch (error) {
     // 8. Handle errors during the fetch (e.g., network issues, unreachable server)
     console.error(`Error fetching ${targetUrlString}:`, error);
-    return new Response(`Failed to proxy request to ${targetUrlString}: ${error.message}`, {
-      status: 502, // Bad Gateway
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    return new Response(
+      `Failed to proxy request to ${targetUrlString}: ${message}`,
+      {
+        status: 502, // Bad Gateway
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      },
+    );
   }
 }
 
-console.log("This address is used to help astrbot connect to the Gemini API faster");
+console.log(
+  "This address is used to help astrbot connect to the Gemini API faster",
+);
 // Start the server on port 8000 (local) or Deno Deploy's assigned port
 serve(handler);
 
-// 在deno_index.ts中添加schema转换函数
-function transformGeminiSchema(tools: any[]): any[] {
-  return tools.map(tool => {
-    if (tool.function_declarations) {
-      tool.function_declarations = tool.function_declarations.map(decl => {
-        if (decl.parameters) {
-          decl.parameters = cleanSchema(decl.parameters);
-        }
-        return decl;
-      });
-    }
-    return tool;
+/**
+ * Legacy wrapper for transformGeminiSchema - maintained for backward compatibility.
+ * This function now delegates to the new normalizer module which provides comprehensive
+ * JSON Schema Draft 2020-12 normalization.
+ *
+ * @param tools - Array of tool declarations with function schemas
+ * @returns Normalized tools with upgraded schemas
+ */
+export function transformGeminiSchema(tools: unknown[]): unknown[] {
+  const result = normalizeTools(tools, {
+    maxDepth: 12,
+    generateDescriptions: true,
+    inferRequired: true,
   });
+
+  if (result.errors.length > 0) {
+    console.error("Schema normalization errors:", result.errors);
+  }
+
+  if (result.warnings.length > 0) {
+    console.warn("Schema normalization warnings:", result.warnings);
+  }
+
+  return result.tools;
 }
 
-function cleanSchema(schema: any): any {
-  // 移除或转换不兼容的字段
-  const cleaned = { ...schema };
-  
-  // 处理$ref引用
-  if (cleaned.$ref) {
-    // 简化为通用object或具体类型
-    return { type: "object" };
+/**
+ * Legacy wrapper for cleanSchema - maintained for backward compatibility.
+ * This function now delegates to the normalizeSchema function from the normalizer module.
+ *
+ * @param schema - Schema object to normalize
+ * @returns Normalized schema conforming to JSON Schema Draft 2020-12
+ */
+export function cleanSchema(schema: unknown): unknown {
+  const result = normalizeSchema(schema, {
+    maxDepth: 12,
+    generateDescriptions: true,
+    inferRequired: true,
+  });
+
+  if (result.errors.length > 0) {
+    console.error("Schema normalization errors:", result.errors);
   }
-  
-  // 移除exclusive bounds
-  delete cleaned.exclusiveMaximum;
-  delete cleaned.exclusiveMinimum;
-  
-  // 处理anyOf/oneOf
-  if (cleaned.anyOf || cleaned.oneOf) {
-    return { type: "object" }; // 简化处理
+
+  if (result.warnings.length > 0) {
+    console.warn("Schema normalization warnings:", result.warnings);
   }
-  
-  // 递归处理嵌套属性
-  if (cleaned.properties) {
-    Object.keys(cleaned.properties).forEach(key => {
-      cleaned.properties[key] = cleanSchema(cleaned.properties[key]);
-    });
-  }
-  
-  return cleaned;
+
+  return result.schema;
 }
