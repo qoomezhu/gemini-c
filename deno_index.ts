@@ -2,8 +2,10 @@
  * Gemini 2.5 Pro代理服务器 - 修复版本
  * 支持：工具调用、流式响应、图像生成、错误处理
  */
-
-import { serve } from "https://deno.land/std@0.225.0/http/server.ts";
+// 将导入语句改为新的路径
+import { serve } from "https://deno.land/std@0.225.0/http/mod.ts"; 
+// 或者为了兼容性使用最新稳定版本
+// import { serve } from "https://deno.land/std/http/mod.ts"; 
 import { normalizeSchema, normalizeTools } from "./schema/normalizer.ts";
 
 // ========== 配置常量 ==========
