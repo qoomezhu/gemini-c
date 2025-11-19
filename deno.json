@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.window", "dom"],
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true
+  },
+  "tasks": {
+    "start": "deno run --allow-net deno_index.ts",
+    "dev": "deno run --allow-net --watch deno_index.ts"
+  },
+  "imports": {
+    "std/": "https://deno.land/std@0.224.0/"
+  }
+}
